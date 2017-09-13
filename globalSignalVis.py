@@ -1,6 +1,6 @@
 #! /usr/bin/env python
 import aipy as a
-import capo
+#import capo
 import numpy as np
 import os
 #from GlobalSkyModel import GlobalSkyModel
@@ -60,17 +60,13 @@ def absorber(theta, sky, abs, nside, dB, theta_cutoff = 0.785):
         sky = Healpix map of sky
         abs = Healpix map of flat temperature absorber (Tabs = 300 K)
           NOTE: sky and abs must have same size!
+        nside = size of HEALPIX map, must be same as sky and abs
         dB = decibels of attenuation from absorber
         theta_cutoff = radians from zenith let into antenna"""
     obs = a.healpix.HealpixMap(nside=nside)
-    absorber = np.exp(-1.*dB/10)
-    # figure out actual right way to define radius for baffle ugh
-    #u = np.transpose(xyz)
-    #v = np.array([x,y,np.zeros(z.size)])
-    # maybe have to do it element-wise to avoid dividing by full norm of u,v
-    #theta = np.arccos(np.dot(u, v)/(np.linalg.norm(u)*np.linalg.norm(v)))
+    absorber = 10**(-1.*dB/10)
     # NOTE: is this going to work???
-    obs.map = np.where(np.abs(theta) > theta_cutoff, sky.map * absorber + abs.map * (1 - absorber), sky.map)
+    obs.map = np.where(theta > theta_cutoff, sky.map * absorber + abs.map * (1 - absorber), sky.map)
     return obs
 
 #def makeGSM(path, nside, freq):
@@ -147,38 +143,44 @@ if __name__ == '__main__':
     fileout = opts.fileout
 
     # select 150 MHz and 160 MHz for u-mode calibration test
-    freq = 0.100
-    aa = a.cal.get_aa(calfile, np.array([freq]))
+    freqs = np.array([0.100]) 
+    #freqs = np.array([0.070, 0.080, 0.090, 0.100, 0.110, 0.120])
+    aa = a.cal.get_aa(calfile, freqs)
 
     N = 64
 
     # make absorber brightness at room temperature
-    I_abs = makeFlatMap(nside=N, Tsky=300.0, freq=freq)
+    # make iterable over many frequencies
+    I_abs = makeFlatMap(nside=N, Tsky=300.0, freq=freqs[0])
     top = I_abs.px2crd(np.arange(I_abs.npix())) #topocentric
     sph_crd = theta,phi = I_abs.px2crd(np.arange(I_abs.npix()),ncrd=2) #topocentric
 
     # make model sky signal (synchrotron or GSM)
-    I_sky = makeSynchMap(nside=N, freq=freq)
+    # make iterable over many frequencies
+    I_sky = makeSynchMap(nside=N, freq=freqs[0])
     # modify observed sky to account for presence of absorber
     I_obs = absorber(theta=theta, sky=I_sky, abs = I_abs, nside=N, dB=15)
 
     # create array of baselines (in ns)
     # !!!!!!!!!!!!!!!!!!!!!!!!!
     ant0 = aa.ants[0].get_params()
-    x0,y0,z0 = xyz0 = ant0['x'],ant0['y'],ant0['z']
+    x0,y0,z0 = xyz0 = np.array([ant0['x'],ant0['y'],ant0['z']])
     ant1 = aa.ants[1].get_params()
-    x1,y1,z1 = xyz1 = ant1['x'],ant1['y'],ant1['z']
+    x1,y1,z1 = xyz1 = np.array([ant1['x'],ant1['y'],ant1['z']])
+    # convert from eq to top, call get_baseline with opt 'z'
     bx,by,bz = bxyz = xyz1 - xyz0
 
-    # number of baselines in sim, turn into array later
-    bl = 1
+    # number of baselines in sim, in array form
+    #bl = 1
+    bl = np.arange(1)
 
     sim_data = []
-    for i in xrange(bl):
-        obs_vis = calcVis(aa=aa, sky=I_obs, txyz=top, bxyz=bxyz, freq=freq)
-        vis_data = [freq, obs_vis]
-        #vis_data = [bl[i], freqs[i], obs_vis]
-        sim_data.append(vis_data)
+    for i in xrange(len(bl)):
+        for j in xrange(len(freqs)):
+            obs_vis = calcVis(aa=aa, sky=I_obs, txyz=top, bxyz=bxyz, freq=freqs[j])
+            # turn into dictionary
+            vis_data = [bl[i], freqs[j], obs_vis]
+            sim_data.append(vis_data)
 
     np.array(sim_data)
     np.savez(sim_dir+'sim_output',sim_data)
