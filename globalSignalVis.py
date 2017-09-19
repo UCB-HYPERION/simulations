@@ -3,6 +3,7 @@ import aipy as a
 #import capo
 import numpy as np
 import os
+import absorber as ab
 #from GlobalSkyModel import GlobalSkyModel
 
 class AntennaArray(a.pol.AntennaArray):
@@ -53,22 +54,6 @@ def hpm_TtoJy(hpm, freq):
     hpm.map *= 1e23*(4*np.pi/hpm.npix())*2*a.const.k/wvlen**2 # convert to Jy to make summable
     return hpm
 
-def absorber(theta, sky, abs, nside, dB, theta_cutoff = 0.785):
-    """ modify sky with absorptive baffle structure
-    takes as arguments:
-        theta = spherical coordinate theta
-        sky = Healpix map of sky
-        abs = Healpix map of flat temperature absorber (Tabs = 300 K)
-          NOTE: sky and abs must have same size!
-        nside = size of HEALPIX map, must be same as sky and abs
-        dB = decibels of attenuation from absorber
-        theta_cutoff = radians from zenith let into antenna"""
-    obs = a.healpix.HealpixMap(nside=nside)
-    absorber = 10**(-1.*dB/10)
-    # NOTE: is this going to work???
-    obs.map = np.where(theta > theta_cutoff, sky.map * absorber + abs.map * (1 - absorber), sky.map)
-    return obs
-
 #def makeGSM(path, nside, freq):
 #        gsmMap = a.healpix.HealpixMap(nside=nside)
 #        g = a.healpix.HealpixMap(nside=512)
@@ -103,19 +88,24 @@ def makeTop(hpm):
     txyz = tx,ty,tz = np.dot(a.coord.eq2top_m(aa.sidereal_time(), aa.lat), exyz) # topocentric
     return txyz
 
-def calcVis(aa, sky, txyz, bxyz, freq):
+def calcVis(aa, sky, bl, freq, dB, theta_cutoff):
     # TODO: import array + GSMMap, calculate topocentric coordinates on the 
     # fly, generate PB on the fly, include time
     """ simulate sky visibilities for a given baseline and primary beam, 
         provided with a sky map at a known frequency and its coordinate system """
     # NOTE: I don't think these are in the same units and I don't know what to 
     # do about it
-    tx,ty,tz = txyz # topocentric
-    bx,by,bz = bxyz
+    tx,ty,tz= txyz = sky.px2crd(np.arange(sky.npix()))
+    bxyz = aa.get_baseline(*bl, src='z')
     # generate proper PB
-    beam = aa[0].bm_response(txyz, pol='x')**2 # topocentric
+    #beam = aa[0].bm_response(txyz, pol='x')**2 # topocentric
+    abs = ab.BeamAbsorber(freqs=freq, dB=dB, horizon_angle=theta_cutoff)
+    beam = (abs.response(txyz, use_abs=True))**2
     # attenuate sky signal and visibility by primary beam
     obs_sky = beam * sky.map
+    # can't get gen_phs to work, complains about receiving multiple values for 
+    # keyword argument 'src'
+    #phs = aa.gen_phs(src=txyz, *bl, mfreq=freq)
     phs = np.exp(np.complex128(-2j*np.pi*freq*np.dot(bxyz, txyz)))
     vis = np.sum(np.where(tz>0, obs_sky*phs, 0))
     return vis
@@ -149,35 +139,22 @@ if __name__ == '__main__':
 
     N = 64
 
-    # make absorber brightness at room temperature
-    # make iterable over many frequencies
-    I_abs = makeFlatMap(nside=N, Tsky=300.0, freq=freqs[0])
-    top = I_abs.px2crd(np.arange(I_abs.npix())) #topocentric
-    sph_crd = theta,phi = I_abs.px2crd(np.arange(I_abs.npix()),ncrd=2) #topocentric
-
     # make model sky signal (synchrotron or GSM)
     # make iterable over many frequencies
     I_sky = makeSynchMap(nside=N, freq=freqs[0])
     # modify observed sky to account for presence of absorber
-    I_obs = absorber(theta=theta, sky=I_sky, abs = I_abs, nside=N, dB=15)
 
     # create array of baselines (in ns)
     # !!!!!!!!!!!!!!!!!!!!!!!!!
-    ant0 = aa.ants[0].get_params()
-    x0,y0,z0 = xyz0 = np.array([ant0['x'],ant0['y'],ant0['z']])
-    ant1 = aa.ants[1].get_params()
-    x1,y1,z1 = xyz1 = np.array([ant1['x'],ant1['y'],ant1['z']])
-    # convert from eq to top, call get_baseline with opt 'z'
-    bx,by,bz = bxyz = xyz1 - xyz0
-
     # number of baselines in sim, in array form
     #bl = 1
     bl = np.arange(1)
+    ij = (0,1)
 
     sim_data = []
     for i in xrange(len(bl)):
         for j in xrange(len(freqs)):
-            obs_vis = calcVis(aa=aa, sky=I_obs, txyz=top, bxyz=bxyz, freq=freqs[j])
+            obs_vis = calcVis(aa=aa, sky=I_sky, bl=ij, freq=freqs[j], dB=15, theta_cutoff=np.pi/4)
             # turn into dictionary
             vis_data = [bl[i], freqs[j], obs_vis]
             sim_data.append(vis_data)
