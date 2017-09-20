@@ -7,14 +7,14 @@ class AbsorberBaffle:
         self.horizon_angle = horizon_angle
     def abs_response(self, xyz):
         theta = np.arccos(xyz[2])
-        return np.where(theta > np.pi/2 - self.horizon_angle, 1., 10**(-dB/10.))
+        return np.where(theta < np.pi/2 - self.horizon_angle, 1., 10**(-self.dB/10.))
 
-class BeamAbsorber(aipy.pol.Beam,AbsorberBaffle):
+class BeamAbsorber(aipy.amp.Beam,AbsorberBaffle):
     def __init__(self, freqs, dB, horizon_angle):
-        aipy.pol.Beam.__init__(self, freqs)
+        aipy.amp.Beam.__init__(self, freqs)
         AbsorberBaffle.__init__(self, dB, horizon_angle)
     def response(self, xyz, use_abs=True):
-        resp = aipy.pol.Beam.response(self, xyz) 
+        resp = aipy.amp.Beam.response(self, xyz) 
         if use_abs: resp *= self.abs_response(xyz)
         return resp
     def auto_noise(self, Tabs, nside=64):
