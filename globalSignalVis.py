@@ -1,6 +1,7 @@
 #! /usr/bin/env python
 import aipy as a
 #import capo
+import uvtools
 import numpy as np
 import os
 import absorber as ab
@@ -88,13 +89,11 @@ def makeTop(hpm):
     txyz = tx,ty,tz = np.dot(a.coord.eq2top_m(aa.sidereal_time(), aa.lat), exyz) # topocentric
     return txyz
 
-def calcVis(aa, sky, bl, freq, dB, theta_cutoff):
+def calcVis(aa, sky, nside, bl, freq, dB, theta_cutoff):
     # TODO: import array + GSMMap, calculate topocentric coordinates on the 
     # fly, generate PB on the fly, include time
     """ simulate sky visibilities for a given baseline and primary beam, 
         provided with a sky map at a known frequency and its coordinate system """
-    # NOTE: I don't think these are in the same units and I don't know what to 
-    # do about it
     tx,ty,tz= txyz = sky.px2crd(np.arange(sky.npix()))
     bxyz = aa.get_baseline(*bl, src='z')
     # generate proper PB
@@ -102,12 +101,15 @@ def calcVis(aa, sky, bl, freq, dB, theta_cutoff):
     abs = ab.BeamAbsorber(freqs=freq, dB=dB, horizon_angle=theta_cutoff)
     beam = (abs.response(txyz, use_abs=True))**2
     # attenuate sky signal and visibility by primary beam
-    obs_sky = beam * sky.map
+    obs_sky = a.healpix.HealpixMap(nside=nside)
+    obs_sky.map = beam[0] * sky.map
+    uvtools.plot.plot_hmap_ortho(obs_sky, res=1)
+    pl.show()
     # can't get gen_phs to work, complains about receiving multiple values for 
     # keyword argument 'src'
     #phs = aa.gen_phs(src=txyz, *bl, mfreq=freq)
     phs = np.exp(np.complex128(-2j*np.pi*freq*np.dot(bxyz, txyz)))
-    vis = np.sum(np.where(tz>0, obs_sky*phs, 0))
+    vis = np.sum(np.where(tz>0, obs_sky.map*phs, 0))
     return vis
 
 if __name__ == '__main__':
@@ -142,7 +144,6 @@ if __name__ == '__main__':
     # make model sky signal (synchrotron or GSM)
     # make iterable over many frequencies
     I_sky = makeSynchMap(nside=N, freq=freqs[0])
-    # modify observed sky to account for presence of absorber
 
     # create array of baselines (in ns)
     # !!!!!!!!!!!!!!!!!!!!!!!!!
@@ -154,7 +155,7 @@ if __name__ == '__main__':
     sim_data = []
     for i in xrange(len(bl)):
         for j in xrange(len(freqs)):
-            obs_vis = calcVis(aa=aa, sky=I_sky, bl=ij, freq=freqs[j], dB=15, theta_cutoff=np.pi/4)
+            obs_vis = calcVis(aa=aa, sky=I_sky, nside=N, bl=ij, freq=freqs[j], dB=15, theta_cutoff=np.pi/4)
             # turn into dictionary
             vis_data = [bl[i], freqs[j], obs_vis]
             sim_data.append(vis_data)
