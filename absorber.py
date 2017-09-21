@@ -7,7 +7,7 @@ class AbsorberBaffle:
         self.horizon_angle = horizon_angle
     def abs_response(self, xyz):
         theta = np.arccos(xyz[2])
-        return np.where(theta < np.pi/2 - self.horizon_angle, 1., 10**(-self.dB/10.))
+        return np.where(theta < np.pi/2 - self.horizon_angle, 1., 10**(-self.dB/20.))
 
 class BeamAbsorber(aipy.amp.Beam,AbsorberBaffle):
     def __init__(self, freqs, dB, horizon_angle):
