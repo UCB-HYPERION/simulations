@@ -89,7 +89,7 @@ def makeTop(hpm):
     txyz = tx,ty,tz = np.dot(a.coord.eq2top_m(aa.sidereal_time(), aa.lat), exyz) # topocentric
     return txyz
 
-def calcVis(aa, sky, nside, bl, freq, dB, theta_cutoff):
+def calcVis(aa, sky, nside, bl, freq, smooth, theta_cutoff, abs_file, make_plot = True):
     # TODO: import array + GSMMap, calculate topocentric coordinates on the 
     # fly, generate PB on the fly, include time
     """ simulate sky visibilities for a given baseline and primary beam, 
@@ -97,14 +97,15 @@ def calcVis(aa, sky, nside, bl, freq, dB, theta_cutoff):
     tx,ty,tz= txyz = sky.px2crd(np.arange(sky.npix()))
     bxyz = aa.get_baseline(*bl, src='z')
     # generate proper PB
-    #beam = aa[0].bm_response(txyz, pol='x')**2 # topocentric
-    abs = ab.BeamAbsorber(freqs=freq, dB=dB, horizon_angle=theta_cutoff)
-    beam = (abs.response(txyz, use_abs=True))**2
+    abs = ab.BeamAbsorber(freqs=freq, beamwidth=1.0, horizon_angle=theta_cutoff)
+    beam = np.abs(abs.response(txyz, smooth=smooth, data_file = abs_file, use_abs=True))**2
     # attenuate sky signal and visibility by primary beam
     obs_sky = a.healpix.HealpixMap(nside=nside)
     obs_sky.map = beam[0] * sky.map
-    uvtools.plot.plot_hmap_ortho(obs_sky, res=1)
-    pl.show()
+    if make_plot == True:
+        uvtools.plot.plot_hmap_ortho(obs_sky, res=1)
+        pl.colorbar()
+        pl.show()
     # can't get gen_phs to work, complains about receiving multiple values for 
     # keyword argument 'src'
     #phs = aa.gen_phs(src=txyz, *bl, mfreq=freq)
@@ -117,46 +118,44 @@ if __name__ == '__main__':
     import matplotlib.pylab as pl
     import optparse, sys
 
-    import optparse, sys
-    import matplotlib.pylab as pl
-
     o = optparse.OptionParser()
     o.add_option('--calfile', default='hyperion_deployment_aug2017')
+    o.add_option('--absfile', default='DIP_S11_LIDON_FER_DB.csv')
     o.add_option('--sim_dir', default='/home/kara/capo/kmk/scripts/')
-    o.add_option('--gsm_dir', default='/home/kara/capo/kmk/gsm/gsm_raw/')
+    #o.add_option('--gsm_dir', default='/home/kara/capo/kmk/gsm/gsm_raw/')
 
-    o.add_option('--fileout', default='sim_results.uv')
+    #o.add_option('--fileout', default='sim_results.uv')
 
     opts,args = o.parse_args(sys.argv[1:])
     calfile = opts.calfile
+    absfile = opts.absfile
     sim_dir = opts.sim_dir
-    gsm_dir = opts.gsm_dir
+    #gsm_dir = opts.gsm_dir
 
-    fileout = opts.fileout
+    #fileout = opts.fileout
 
-    # select 150 MHz and 160 MHz for u-mode calibration test
-    freqs = np.array([0.100]) 
-    #freqs = np.array([0.070, 0.080, 0.090, 0.100, 0.110, 0.120])
+    # set characteristic frequencies and absorber attenuations of simulation
+    # NOTE: must have same number of frequencies and attenuations
+    #freqs = np.array([0.080, 0.100]) 
+    freqs = np.linspace(0.050, 0.150, 20)
+        
     aa = a.cal.get_aa(calfile, freqs)
 
-    N = 64
+    N = 32
 
     # make model sky signal (synchrotron or GSM)
     # make iterable over many frequencies
-    I_sky = makeSynchMap(nside=N, freq=freqs[0])
 
-    # create array of baselines (in ns)
-    # !!!!!!!!!!!!!!!!!!!!!!!!!
     # number of baselines in sim, in array form
-    #bl = 1
     bl = np.arange(1)
     ij = (0,1)
 
     sim_data = []
     for i in xrange(len(bl)):
         for j in xrange(len(freqs)):
-            obs_vis = calcVis(aa=aa, sky=I_sky, nside=N, bl=ij, freq=freqs[j], dB=15, theta_cutoff=np.pi/4)
-            # turn into dictionary
+            I_sky = makeSynchMap(nside=N, freq=freqs[i])
+            obs_vis = calcVis(aa=aa, sky=I_sky, nside=N, bl=ij, freq=freqs[j], smooth=0.1, theta_cutoff=np.pi/4, abs_file = absfile, make_plot=True)
+            # turn into dictionary eventually
             vis_data = [bl[i], freqs[j], obs_vis]
             sim_data.append(vis_data)
 
