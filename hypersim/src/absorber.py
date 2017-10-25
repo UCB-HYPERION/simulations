@@ -5,12 +5,13 @@ import csv, sys
 
 class BeamDipole(aipy.phs.Beam):
     def __init__(self, freqs):
-        self.freqs = freqs
-    def response(self, xyz):
-        # I have no idea what I'm doing but this ain't working
+        aipy.phs.Beam.__init__(self, np.array([freqs]))
+    def bm_response(self, xyz):
+        x,y,z = np.array(xyz)
+        ones = np.ones((self.afreqs.size, x.size))
         theta = np.arcsin(xyz[2])
-        resp = np.cos(np.pi / 2. * np.cos(theta)) / np.sin(theta)
-        return resp
+        resp = np.where(np.sin(theta) == 0.0, 0, np.cos(np.pi / 2. * np.cos(theta)) / np.sin(theta))
+        return resp*ones
 
 class Absorber:
     def __init__(self, horizon_angle):
@@ -36,12 +37,12 @@ class Absorber:
         print "dB = %f" % dB
         return s * 10**(dB/20.) + (1-s)*1.
 
-class BeamAbsorber(aipy.amp.Beam,Absorber):
+class BeamAbsorber(BeamDipole,Absorber):
     def __init__(self, freqs, horizon_angle):
-        aipy.amp.Beam.__init__(self, freqs)
+        BeamDipole.__init__(self, freqs)
         Absorber.__init__(self, horizon_angle)
     def response(self, xyz, smooth, data_file, flat, use_abs=True):
-        resp = aipy.amp.Beam.response(self, xyz) 
+        resp = self.bm_response(xyz)
         if use_abs: resp *= self.abs_response(xyz, self.freqs, smooth, data_file, flat)
         return resp
     def auto_noise(self, Tabs, nside=64):

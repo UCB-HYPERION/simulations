@@ -4,7 +4,7 @@ import aipy as a
 import uvtools
 import numpy as np
 import os
-import absorber as ab
+import hypersim.absorber as ab
 #from GlobalSkyModel import GlobalSkyModel
 
 class AntennaArray(a.pol.AntennaArray):
@@ -89,7 +89,7 @@ def makeTop(hpm):
     txyz = tx,ty,tz = np.dot(a.coord.eq2top_m(aa.sidereal_time(), aa.lat), exyz) # topocentric
     return txyz
 
-def calcVis(aa, sky, nside, bl, freq, smooth, theta_cutoff, abs_file, make_plot = True):
+def calcVis(aa, sky, nside, bl, freq, smooth, theta_cutoff, abs_file, flat, make_plot = True):
     # TODO: import array + GSMMap, calculate topocentric coordinates on the 
     # fly, generate PB on the fly, include time
     """ simulate sky visibilities for a given baseline and primary beam, 
@@ -154,7 +154,7 @@ if __name__ == '__main__':
             I_sky = makeFlatMap(nside=N, freq=freqs[j], Tsky=200)
             I_sky.map = I_sky.map / (freqs[j]**2)
             #I_sky = makeSynchMap(nside=N, freq=freqs[j])
-            obs_vis = calcVis(aa=aa, sky=I_sky, nside=N, bl=bl, freq=freqs[j], smooth=smooth, theta_cutoff=np.pi/4, abs_file = absfile, make_plot=False)
+            obs_vis = calcVis(aa=aa, sky=I_sky, nside=N, bl=bl, freq=freqs[j], smooth=smooth, theta_cutoff=np.pi/4, abs_file = absfile, flat=0, make_plot=False)
             # turn into dictionary eventually
             vis_data[j] = obs_vis 
             sim_data.append([i, freqs[j], obs_vis])
