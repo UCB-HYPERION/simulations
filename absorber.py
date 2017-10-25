@@ -3,6 +3,15 @@ import aipy, numpy as np
 from scipy import interpolate
 import csv, sys
 
+class BeamDipole(aipy.phs.Beam):
+    def __init__(self, freqs):
+        self.freqs = freqs
+    def response(self, xyz):
+        # I have no idea what I'm doing but this ain't working
+        theta = np.arcsin(xyz[2])
+        resp = np.cos(np.pi / 2. * np.cos(theta)) / np.sin(theta)
+        return resp
+
 class Absorber:
     def __init__(self, horizon_angle):
         self.horizon_angle = horizon_angle
@@ -16,21 +25,24 @@ class Absorber:
                 attens.append(float(row[1])) # values are negative
             func = interpolate.interp1d(freqs, attens)
             return func
-    def abs_response(self, xyz, freq, smooth, data_file):
+    def abs_response(self, xyz, freq, smooth, data_file, flat):
         theta = np.arccos(xyz[2])
         s = 0.5 + 0.5*np.tanh((theta-(np.pi/2 - self.horizon_angle))/smooth)
-        atten = self.freq_atten(data_file)
-        dB = atten(freq)
+        if bool(data_file) == True:
+            atten = self.freq_atten(data_file)
+            dB = atten(freq)
+        else:
+            dB = flat
         print "dB = %f" % dB
         return s * 10**(dB/20.) + (1-s)*1.
 
-class BeamAbsorber(aipy.amp.Beam2DGaussian,Absorber):
-    def __init__(self, freqs, beamwidth, horizon_angle):
-        aipy.amp.Beam2DGaussian.__init__(self, freqs, xwidth=beamwidth, ywidth=beamwidth)
+class BeamAbsorber(aipy.amp.Beam,Absorber):
+    def __init__(self, freqs, horizon_angle):
+        aipy.amp.Beam.__init__(self, freqs)
         Absorber.__init__(self, horizon_angle)
-    def response(self, xyz, smooth, data_file, use_abs=True):
-        resp = aipy.amp.Beam2DGaussian.response(self, xyz) 
-        if use_abs: resp *= self.abs_response(xyz, self.freqs, smooth, data_file)
+    def response(self, xyz, smooth, data_file, flat, use_abs=True):
+        resp = aipy.amp.Beam.response(self, xyz) 
+        if use_abs: resp *= self.abs_response(xyz, self.freqs, smooth, data_file, flat)
         return resp
     def auto_noise(self, Tabs, nside=64):
         h = aipy.healpix.HealpixBase(nside=nside)

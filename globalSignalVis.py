@@ -97,21 +97,18 @@ def calcVis(aa, sky, nside, bl, freq, smooth, theta_cutoff, abs_file, make_plot 
     tx,ty,tz= txyz = sky.px2crd(np.arange(sky.npix()))
     bxyz = aa.get_baseline(*bl, src='z')
     # generate proper PB
-    abs = ab.BeamAbsorber(freqs=freq, beamwidth=1.0, horizon_angle=theta_cutoff)
-    beam = np.abs(abs.response(txyz, smooth=smooth, data_file = abs_file, use_abs=True))**2
+    abs = ab.BeamAbsorber(freqs=freq, horizon_angle=theta_cutoff)
+    beam = np.abs(abs.response(txyz, smooth=smooth, data_file = abs_file, flat = False, use_abs=True))**2
     # attenuate sky signal and visibility by primary beam
     obs_sky = a.healpix.HealpixMap(nside=nside)
     obs_sky.map = beam[0] * sky.map
     if make_plot == True:
-        uvtools.plot.plot_hmap_ortho(obs_sky, res=1)
+        uvtools.plot.plot_hmap_ortho(obs_sky, res=1, mx=2.5, drng=2.5)
         pl.colorbar()
         pl.show()
-    # can't get gen_phs to work, complains about receiving multiple values for 
-    # keyword argument 'src'
-    #phs = aa.gen_phs(src=txyz, *bl, mfreq=freq)
     phs = np.exp(np.complex128(-2j*np.pi*freq*np.dot(bxyz, txyz)))
     vis = np.sum(np.where(tz>0, obs_sky.map*phs, 0))
-    return vis
+    return np.abs(vis)
 
 if __name__ == '__main__':
 
@@ -122,6 +119,7 @@ if __name__ == '__main__':
     o.add_option('--calfile', default='hyperion_deployment_aug2017')
     o.add_option('--absfile', default='DIP_S11_LIDON_FER_DB.csv')
     o.add_option('--sim_dir', default='/home/kara/capo/kmk/scripts/')
+    o.add_option('--smooth', default=0.1)
     #o.add_option('--gsm_dir', default='/home/kara/capo/kmk/gsm/gsm_raw/')
 
     #o.add_option('--fileout', default='sim_results.uv')
@@ -130,36 +128,49 @@ if __name__ == '__main__':
     calfile = opts.calfile
     absfile = opts.absfile
     sim_dir = opts.sim_dir
+    smooth = float(opts.smooth)
     #gsm_dir = opts.gsm_dir
 
     #fileout = opts.fileout
 
-    # set characteristic frequencies and absorber attenuations of simulation
-    # NOTE: must have same number of frequencies and attenuations
-    #freqs = np.array([0.080, 0.100]) 
-    freqs = np.linspace(0.050, 0.150, 20)
+    # set characteristic frequencies of simulation
+    freqs = np.linspace(0.050, 0.150, 50)
+    wvlens = a.const.c / (freqs*1e9) # cm
+    #freqs = np.linspace(0.050, 0.150, 10)
         
     aa = a.cal.get_aa(calfile, freqs)
 
     N = 32
 
-    # make model sky signal (synchrotron or GSM)
-    # make iterable over many frequencies
-
     # number of baselines in sim, in array form
-    bl = np.arange(1)
-    ij = (0,1)
+    ij = np.arange(0,8,1)
+    #ij = np.arange(1)
 
     sim_data = []
-    for i in xrange(len(bl)):
+    vis_data = np.zeros(len(freqs))
+    for i in xrange(len(ij)):
+        bl = (0, ij[i])
         for j in xrange(len(freqs)):
-            I_sky = makeSynchMap(nside=N, freq=freqs[i])
-            obs_vis = calcVis(aa=aa, sky=I_sky, nside=N, bl=ij, freq=freqs[j], smooth=0.1, theta_cutoff=np.pi/4, abs_file = absfile, make_plot=True)
+            I_sky = makeFlatMap(nside=N, freq=freqs[j], Tsky=200)
+            I_sky.map = I_sky.map / (freqs[j]**2)
+            #I_sky = makeSynchMap(nside=N, freq=freqs[j])
+            obs_vis = calcVis(aa=aa, sky=I_sky, nside=N, bl=bl, freq=freqs[j], smooth=smooth, theta_cutoff=np.pi/4, abs_file = absfile, make_plot=False)
             # turn into dictionary eventually
-            vis_data = [bl[i], freqs[j], obs_vis]
-            sim_data.append(vis_data)
+            vis_data[j] = obs_vis 
+            sim_data.append([i, freqs[j], obs_vis])
+        bx,by,bz = bxyz = aa.get_baseline(*bl, src='z')
+        uv = np.sqrt(bx**2 + by**2 + bz**2) / wvlens
+        pl.plot(freqs, vis_data, label="Baseline %d" % i) 
 
-    np.array(sim_data)
+    pl.title("Absorber Smoothing Factor = %f" % smooth)
+    #pl.xlabel("uv-plane Baseline Separation")
+    pl.xlabel("Frequency (GHz)")
+    pl.ylabel("Visibility Amplitude")
+    pl.legend()
+    pl.show()
+
+    sim_data = np.array(sim_data)
+    print sim_data.shape
     np.savez(sim_dir+'sim_output',sim_data)
-    print sim_data
+    #print sim_data
 
