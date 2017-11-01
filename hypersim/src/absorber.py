@@ -6,7 +6,7 @@ import csv, sys
 class BeamDipole(aipy.phs.Beam):
     def __init__(self, freqs):
         aipy.phs.Beam.__init__(self, np.array([freqs]))
-    def bm_response(self, xyz):
+    def beam_response(self, xyz):
         x,y,z = np.array(xyz)
         ones = np.ones((self.afreqs.size, x.size))
         theta = np.arcsin(xyz[2])
@@ -42,7 +42,7 @@ class BeamAbsorber(BeamDipole,Absorber):
         BeamDipole.__init__(self, freqs)
         Absorber.__init__(self, horizon_angle)
     def response(self, xyz, smooth, data_file, flat, use_abs=True):
-        resp = self.bm_response(xyz)
+        resp = self.beam_response(xyz)
         if use_abs: resp *= self.abs_response(xyz, self.freqs, smooth, data_file, flat)
         return resp
     def auto_noise(self, Tabs, nside=64):

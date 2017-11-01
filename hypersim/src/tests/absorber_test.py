@@ -6,11 +6,11 @@ class TestBeamDipole(unittest.TestCase):
         #self.fq = np.arange(0,1,0.1) #GHz
         self.fq = 0.100 #GHz
         self.bm = h.absorber.BeamDipole(self.fq)
-    def test_bm_response(self):
+    def test_beam_esponse(self):
         xyz = np.array([0,0,1])
-        self.assertEqual(self.bm.bm_response(xyz),1)
+        self.assertEqual(self.bm.beam_response(xyz),1)
         xyz = np.array([0,1,0])
-        self.assertEqual(self.bm.bm_response(xyz),0)
+        self.assertEqual(self.bm.beam_response(xyz),0)
 class TestAbsorber(unittest.TestCase):
     def setUp(self):
         self.fq = 0.100 #GHz
@@ -58,9 +58,9 @@ class TestBeamAbsorber(unittest.TestCase):
         ang1 = self.ang + 0.01
         ang2 = self.ang - 0.01
         xyz = np.array([0,np.cos(ang1),np.sin(ang1)])
-        np.testing.assert_equal(self.bm.response(xyz, self.smooth, data_file=False, flat=dB, use_abs=True),self.bm.bm_response(xyz))
+        np.testing.assert_equal(self.bm.response(xyz, self.smooth, data_file=False, flat=dB, use_abs=True),self.bm.beam_response(xyz))
         xyz = np.array([0,np.cos(ang2),np.sin(ang2)])
-        np.testing.assert_equal(self.bm.response(xyz, self.smooth, data_file=False, flat=dB, use_abs=True),self.bm.bm_response(xyz)*10**(-15/20.))
+        np.testing.assert_equal(self.bm.response(xyz, self.smooth, data_file=False, flat=dB, use_abs=True),self.bm.beam_response(xyz)*10**(-15/20.))
 
 
 if __name__ == '__main__':

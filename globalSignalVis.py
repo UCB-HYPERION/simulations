@@ -89,7 +89,7 @@ def makeTop(hpm):
     txyz = tx,ty,tz = np.dot(a.coord.eq2top_m(aa.sidereal_time(), aa.lat), exyz) # topocentric
     return txyz
 
-def calcVis(aa, sky, nside, bl, freq, smooth, theta_cutoff, abs_file, flat, make_plot = True):
+def calcVis(aa, sky, nside, bl, freq, smooth, theta_cutoff, abs_file, flat = False, make_plot = True):
     # TODO: import array + GSMMap, calculate topocentric coordinates on the 
     # fly, generate PB on the fly, include time
     """ simulate sky visibilities for a given baseline and primary beam, 
@@ -108,7 +108,7 @@ def calcVis(aa, sky, nside, bl, freq, smooth, theta_cutoff, abs_file, flat, make
         pl.show()
     phs = np.exp(np.complex128(-2j*np.pi*freq*np.dot(bxyz, txyz)))
     vis = np.sum(np.where(tz>0, obs_sky.map*phs, 0))
-    return np.abs(vis)
+    return vis
 
 if __name__ == '__main__':
 
@@ -154,13 +154,13 @@ if __name__ == '__main__':
             I_sky = makeFlatMap(nside=N, freq=freqs[j], Tsky=200)
             I_sky.map = I_sky.map / (freqs[j]**2)
             #I_sky = makeSynchMap(nside=N, freq=freqs[j])
-            obs_vis = calcVis(aa=aa, sky=I_sky, nside=N, bl=bl, freq=freqs[j], smooth=smooth, theta_cutoff=np.pi/4, abs_file = absfile, flat=0, make_plot=False)
+            obs_vis,obs_phs = calcVis(aa=aa, sky=I_sky, nside=N, bl=bl, freq=freqs[j], smooth=smooth, theta_cutoff=np.pi/4, abs_file = absfile, flat=0, make_plot=False)
             # turn into dictionary eventually
             vis_data[j] = obs_vis 
             sim_data.append([i, freqs[j], obs_vis])
         bx,by,bz = bxyz = aa.get_baseline(*bl, src='z')
         uv = np.sqrt(bx**2 + by**2 + bz**2) / wvlens
-        pl.plot(freqs, vis_data, label="Baseline %d" % i) 
+        pl.plot(freqs, np.abs(vis_data), label="Baseline %d" % i) 
 
     pl.title("Absorber Smoothing Factor = %f" % smooth)
     #pl.xlabel("uv-plane Baseline Separation")
