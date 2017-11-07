@@ -5,6 +5,7 @@ import uvtools
 import numpy as np
 import os
 import hypersim.absorber as ab
+import matplotlib.pylab as pl
 #from GlobalSkyModel import GlobalSkyModel
 
 class AntennaArray(a.pol.AntennaArray):
@@ -37,6 +38,14 @@ def makeFlatMap(nside, freq, Tsky=1.0):
     hpm = a.healpix.HealpixMap(nside=nside)
     hpm.map = Tsky*np.ones(shape = hpm.map.shape)
     print "flat map size = " + str(hpm.map.shape)
+    return hpm_TtoJy(hpm, freq)
+
+def makeNoiseMap(nside, freq, mu, sigma):
+    """ fill sky map of given size and frequency with noisy map with mean mu and standard deviation sigma,
+        returns map in Janskys. """
+    hpm = a.healpix.HealpixMap(nside=nside)
+    hpm.map = np.reshape(np.random.normal(loc=mu, scale=sigma, size = hpm.map.size), hpm.map.shape)
+    print "noise map size = " + str(hpm.map.shape)
     return hpm_TtoJy(hpm, freq)
 
 def makeSynchMap(nside, freq=0.150):
@@ -110,9 +119,13 @@ def calcVis(aa, sky, nside, bl, freq, smooth, theta_cutoff, abs_file, flat = Fal
     vis = np.sum(np.where(tz>0, obs_sky.map*phs, 0))
     return vis
 
+def calibrate(aa, nside, bl, freq):
+    I_sky = makeFlatMap(nside=nside, freq=freq, Tsky=1.)
+    coefficient = calcVis(aa=aa, sky=I_sky, nside=nside, bl=bl, freq=freq, smooth=0.01, theta_cutoff=np.pi/4, abs_file = False, flat=0., make_plot=False)
+    return coefficient
+
 if __name__ == '__main__':
 
-    import matplotlib.pylab as pl
     import optparse, sys
 
     o = optparse.OptionParser()
@@ -143,24 +156,33 @@ if __name__ == '__main__':
     N = 32
 
     # number of baselines in sim, in array form
-    ij = np.arange(0,8,1)
+    ij = np.arange(0,7,1)
     #ij = np.arange(1)
 
     sim_data = []
-    vis_data = np.zeros(len(freqs))
+    vis_data = np.zeros(len(freqs), dtype=complex)
+    temp = np.zeros(len(freqs), dtype=complex)
+    temp_mean = []
+    temp_std = []
     for i in xrange(len(ij)):
         bl = (0, ij[i])
         for j in xrange(len(freqs)):
-            I_sky = makeFlatMap(nside=N, freq=freqs[j], Tsky=200)
-            I_sky.map = I_sky.map / (freqs[j]**2)
+            I_sky = makeFlatMap(nside=N, freq=freqs[j], Tsky=10)
+            I_noise = makeNoiseMap(nside=N, freq=freqs[j], mu=0.0, sigma=1.0)
+            I_sky.map = I_sky.map + I_noise.map 
             #I_sky = makeSynchMap(nside=N, freq=freqs[j])
-            obs_vis,obs_phs = calcVis(aa=aa, sky=I_sky, nside=N, bl=bl, freq=freqs[j], smooth=smooth, theta_cutoff=np.pi/4, abs_file = absfile, flat=0, make_plot=False)
+            cal_coeffs = calibrate(aa=aa, nside=N, bl=bl, freq=freqs[j])
+            obs_vis = calcVis(aa=aa, sky=I_sky, nside=N, bl=bl, freq=freqs[j], smooth=smooth, theta_cutoff=np.pi/4, abs_file = False, flat=0., make_plot=False)
+            #obs_vis = calcVis(aa=aa, sky=I_sky, nside=N, bl=bl, freq=freqs[j], smooth=smooth, theta_cutoff=np.pi/4, abs_file = absfile, flat=0, make_plot=False)
             # turn into dictionary eventually
             vis_data[j] = obs_vis 
+            temp[j] = obs_vis / cal_coeffs
             sim_data.append([i, freqs[j], obs_vis])
         bx,by,bz = bxyz = aa.get_baseline(*bl, src='z')
         uv = np.sqrt(bx**2 + by**2 + bz**2) / wvlens
         pl.plot(freqs, np.abs(vis_data), label="Baseline %d" % i) 
+        temp_mean.append(np.mean(temp))
+        temp_std.append( np.std(temp))
 
     pl.title("Absorber Smoothing Factor = %f" % smooth)
     #pl.xlabel("uv-plane Baseline Separation")
@@ -169,8 +191,9 @@ if __name__ == '__main__':
     pl.legend()
     pl.show()
 
-    sim_data = np.array(sim_data)
-    print sim_data.shape
-    np.savez(sim_dir+'sim_output',sim_data)
-    #print sim_data
+    #sim_data = np.array(sim_data)
+    #np.savez(sim_dir+'sim_output',sim_data)
+
+    print temp_mean
+    print temp_std
 
