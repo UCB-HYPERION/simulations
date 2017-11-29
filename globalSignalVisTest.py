@@ -29,10 +29,7 @@ class calcVisTest(unittest.TestCase):
         self.assertEqual(np.imag(v), 0)
 
         # verify point source characteristics
-        sky = globalSignalVis.makeFlatMap(nside=self.N, freq=self.freqs[0], Tsky=0.)
-        xyz = sky.px2crd(np.arange(sky.npix()))
-        theta = np.arcsin(xyz[2])
-        sky.map = np.where(np.sin(theta) == 0.0, 1, 0)
+        sky = globalSignalVis.makePointSourceMap(nside=self.N, freq=self.freqs[0], Tsource=1.)
         ij = np.arange(0,7,1)
         vis = 0
         for i in xrange(len(ij)):

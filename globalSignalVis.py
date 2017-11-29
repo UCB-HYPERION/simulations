@@ -8,54 +8,37 @@ import hypersim.absorber as ab
 import matplotlib.pylab as pl
 #from GlobalSkyModel import GlobalSkyModel
 
-class AntennaArray(a.pol.AntennaArray):
-    def geometric_dly(self, i, j):
-        """ converts unique baseline numbers into nanosecond delays """
-        bx, by, bz = self.get_baseline(i,j)
-        return np.sqrt(bx**2 + by**2 + bz**2)        
-
-def calcFreq(array, ij, ref_ij, ref_freq, min_freq, max_freq):
-    """ calculates nuCal frequencies (in GHz) based on an initial frequency, reference baseline, 
-        and input baseline. must include min and max frequencies for array in order to
-        ensure that calculated frequencies are legal. """
-
-    bl = bl2delay(array, ij)
-    ref_bl = bl2delay(array, ref_ij)
-    f = ref_freq * (ref_bl / bl)
-    assert(max_freq >= f >= min_freq)
-
-    i, j = a.miriad.bl2ij(bl)
-    bl = aa.get_baseline(i, j)
-    bl = np.sqrt(np.dot(bl, bl))
-    f = ref_freq * (ref_bl / baseline)
-    assert(max_freq >= f >= min_freq) # check for invalid freq
-
-    return f
-
-def makeFlatMap(nside, freq, Tsky=1.0):
+def makeFlatMap(nside, freq, Tsky=1.0, jansky = True):
     """ fill sky map of given size and frequency with flat temperature across whole sky,
         returns map in Janskys. """
     hpm = a.healpix.HealpixMap(nside=nside)
     hpm.map = Tsky*np.ones(shape = hpm.map.shape)
     print "flat map size = " + str(hpm.map.shape)
-    return hpm_TtoJy(hpm, freq)
+    if jansky == True:
+        hpm = hpm_TtoJy(hpm, freq)
+    return hpm
 
-def makeNoiseMap(nside, freq, mu, sigma):
-    """ fill sky map of given size and frequency with noisy map with mean mu and standard deviation sigma,
-        returns map in Janskys. """
-    hpm = a.healpix.HealpixMap(nside=nside)
-    hpm.map = np.reshape(np.random.normal(loc=mu, scale=sigma, size = hpm.map.size), hpm.map.shape)
-    print "noise map size = " + str(hpm.map.shape)
-    return hpm_TtoJy(hpm, freq)
-
-def makeSynchMap(nside, freq=0.150):
+def makeSynchMap(nside, freq=0.150, jansky = True):
     """ fill sky map of given size and frequency with flat temperature across whole sky based on synchrotron spectrum,
         returns map in Janskys. """
     hpm = a.healpix.HealpixMap(nside=nside)
     Tsky = 237 * (freq/0.150)**-2.5
     hpm.map = Tsky*np.ones(shape = hpm.map.shape)
-    print "flat map size = " + str(hpm.map.shape)
-    return hpm_TtoJy(hpm, freq)
+    print "synchrotron map size = " + str(hpm.map.shape)
+    if jansky == True:
+        hpm = hpm_TtoJy(hpm, freq)
+    return hpm
+
+def makePointSourceMap(nside, freq=0.150, Tsource=1., jansky = True):
+    """ make sky map with point source with brightness temperature Tsource at zenith, for testing purposes"""
+    hpm = a.healpix.HealpixMap(nside=nside)
+    xyz = hpm.px2crd(np.arange(hpm.npix()))
+    theta = np.arcsin(xyz[2])
+    hpm.map = np.where(np.sin(theta) == 0.0, Tsource, 0)
+    print "point source map size = " + str(hpm.map.shape)
+    if jansky == True:
+        hpm = hpm_TtoJy(hpm, freq)
+    return hpm
 
 def hpm_TtoJy(hpm, freq):
     """ converts given Healpix map from brightness temperature to Janskys, provided map
@@ -119,10 +102,17 @@ def calcVis(aa, sky, nside, bl, freq, smooth, theta_cutoff, abs_file, flat = Fal
     vis = np.sum(np.where(tz>0, obs_sky.map*phs, 0))
     return vis
 
-def calibrate(aa, nside, bl, freq):
+def monopole_coeffs(aa, nside, bl, freq):
+    # does this need to have absorber abilities?
+    # I bet it does
     I_sky = makeFlatMap(nside=nside, freq=freq, Tsky=1.)
     coefficient = calcVis(aa=aa, sky=I_sky, nside=nside, bl=bl, freq=freq, smooth=0.01, theta_cutoff=np.pi/4, abs_file = False, flat=0., make_plot=False)
     return coefficient
+
+def noise(shape, scale):
+    n_real = np.random.normal(size=shape, scale=scale/np.sqrt(2))
+    n_imag = np.random.normal(size=shape, scale=scale/np.sqrt(2))
+    return n_real + 1j*n_imag
 
 if __name__ == '__main__':
 
@@ -149,7 +139,6 @@ if __name__ == '__main__':
     # set characteristic frequencies of simulation
     freqs = np.linspace(0.050, 0.150, 50)
     wvlens = a.const.c / (freqs*1e9) # cm
-    #freqs = np.linspace(0.050, 0.150, 10)
         
     aa = a.cal.get_aa(calfile, freqs)
 
@@ -157,43 +146,68 @@ if __name__ == '__main__':
 
     # number of baselines in sim, in array form
     ij = np.arange(0,7,1)
-    #ij = np.arange(1)
+
+    B = 1e9*(np.max(freqs)-np.min(freqs))/len(freqs) # channel bandwidth in Hz
+    int_time = 10 # integration time in seconds
+    T_sys = 300 # K, room temperature system
+    T_rms = T_sys / np.sqrt(B*int_time)
 
     sim_data = []
     vis_data = np.zeros(len(freqs), dtype=complex)
-    temp = np.zeros(len(freqs), dtype=complex)
-    temp_mean = []
-    temp_std = []
+    temp_sum = []
+    temp_wgt = []
+    temp = []
+    pl.figure(0)
     for i in xrange(len(ij)):
         bl = (0, ij[i])
         for j in xrange(len(freqs)):
-            I_sky = makeFlatMap(nside=N, freq=freqs[j], Tsky=10)
-            I_noise = makeNoiseMap(nside=N, freq=freqs[j], mu=0.0, sigma=1.0)
-            I_sky.map = I_sky.map + I_noise.map 
-            #I_sky = makeSynchMap(nside=N, freq=freqs[j])
-            cal_coeffs = calibrate(aa=aa, nside=N, bl=bl, freq=freqs[j])
+            I_sky = makeFlatMap(nside=N, freq=freqs[j], Tsky=1., jansky = True)
+            #I_sky = makeSynchMap(nside=N, freq=freqs[j], jansky = True)
+            cal_coeffs = monopole_coeffs(aa=aa, nside=N, bl=bl, freq=freqs[j])
             obs_vis = calcVis(aa=aa, sky=I_sky, nside=N, bl=bl, freq=freqs[j], smooth=smooth, theta_cutoff=np.pi/4, abs_file = False, flat=0., make_plot=False)
+            noise_amp = 1e23 * 2*a.const.k*T_rms / (wvlens[j]**2) # convert thermal noise level to Janskys
+            obs_vis += noise(shape=obs_vis.size, scale=noise_amp)
             #obs_vis = calcVis(aa=aa, sky=I_sky, nside=N, bl=bl, freq=freqs[j], smooth=smooth, theta_cutoff=np.pi/4, abs_file = absfile, flat=0, make_plot=False)
-            # turn into dictionary eventually
-            vis_data[j] = obs_vis 
-            temp[j] = obs_vis / cal_coeffs
-            sim_data.append([i, freqs[j], obs_vis])
+            weight = (np.abs(cal_coeffs) / noise_amp)**2
+            temp_sum.append(weight * obs_vis / cal_coeffs)
+            temp_wgt.append(weight)
+            #temp.append(obs_vis/cal_coeffs)
+            vis_data[j] = obs_vis
         bx,by,bz = bxyz = aa.get_baseline(*bl, src='z')
         uv = np.sqrt(bx**2 + by**2 + bz**2) / wvlens
         pl.plot(freqs, np.abs(vis_data), label="Baseline %d" % i) 
-        temp_mean.append(np.mean(temp))
-        temp_std.append( np.std(temp))
 
-    pl.title("Absorber Smoothing Factor = %f" % smooth)
-    #pl.xlabel("uv-plane Baseline Separation")
+    #pl.title("Absorber Smoothing Factor = %f" % smooth)
+    pl.title("Flat Sky with Absorber, Flat Brightness") 
+    #pl.title("Synchrotron Sky with No Absorber") 
+    pl.xlabel("uv-plane Baseline Separation")
     pl.xlabel("Frequency (GHz)")
     pl.ylabel("Visibility Amplitude")
     pl.legend()
+
+    temp_sum = np.array(temp_sum)
+    temp_wgt = np.array(temp_wgt)
+    #temp = np.array(temp)
+
+    temp_sum.shape = (-1,50)
+    temp_wgt.shape = (-1,50)
+    #temp.shape = (-1, 50)
+
+    # solve for the observed temperature using inverse variance weighting
+    temp = np.sum(temp_sum,axis=0)/np.sum(temp_wgt,axis=0)
+    temp_rms = 1./np.sqrt(np.sum(temp_wgt,axis=0)) #rms noise of inverse variance weighted values 
+    #temp_rms_gen = np.sqrt(np.sum(temp_wgt**2,axis=0))/np.sqrt(np.sum(temp_wgt,axis=0)) #rms noise of inverse variance weighted values 
+    print temp
+    #print np.mean(temp), np.mean(temp_rms)
+
+
+    pl.figure(1)
+    #pl.plot(freqs, temp, label="Measured Temperature")
+    #pl.plot(freqs, temp_rms)
+    pl.errorbar(freqs, temp, yerr=temp_rms)
+    pl.title("RMS Noise")
+    pl.xlabel("Frequency (GHz)")
+    pl.ylabel("RMS Noise Amplitude")
+    #pl.legend()
     pl.show()
-
-    #sim_data = np.array(sim_data)
-    #np.savez(sim_dir+'sim_output',sim_data)
-
-    print temp_mean
-    print temp_std
 
