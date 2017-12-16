@@ -32,8 +32,8 @@ aa = a.cal.get_aa(calfile, freqs)
 aa.set_jultime()
 jd_init = aa.get_jultime()
 print jd_init
-jds = np.array([jd_init])
-#jds = np.linspace(jd_init, jd_init + 0.5, 12)
+#jds = np.array([jd_init])
+jds = np.linspace(jd_init, jd_init + 0.5, 12)
 
 # generate galactic sky
 hpm = makeGSM(nside=64, freq=freqs[0])

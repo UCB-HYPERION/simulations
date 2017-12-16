@@ -59,27 +59,29 @@ def calcVis(aa, sky, txyz, nside, bl, freq, smooth, theta_cutoff, abs_file, flat
     beam = np.abs(abs.response(txyz, smooth=smooth, data_file = abs_file, flat = False, use_abs=True))**2
     # attenuate sky signal and visibility by primary beam
     obs_sky = beam[0] * sky.map
-    print obs_sky.max()
+    #obs_sky = sky.map
     if make_plot == True:
         pl_map = a.healpix.HealpixMap(nside=nside, interp=True)
         x,y,z = xyz = pl_map.px2crd(np.arange(pl_map.npix()))
         top2eq = np.linalg.inv(aa.eq2top_m)
         ex,ey,ez = np.dot(top2eq, xyz)
-        # no beam in plot because I can't figure out how to make it work lmao
+        old_map = sky.map
+        sky.map = obs_sky
+        sky.set_interpol(True)
         pl_map.map = sky[ex,ey,ez] 
-        # disappearing pixel at zenith even with interpolation on
-        uvtools.plot.plot_hmap_ortho(pl_map, res=1, mx=2.5, drng=2.5)
+        sky.map = old_map
+        sky.set_interpol(False)
+        uvtools.plot.plot_hmap_ortho(pl_map, res=0.25, mx=2.5, drng=2.5)
         pl.colorbar()
         pl.show()
     phs = np.exp(np.complex128(-2j*np.pi*freq*np.dot(bxyz, txyz)))
     vis = (4*np.pi/sky.npix())*np.sum(np.where(tz>0, obs_sky*phs, 0))
     return vis
 
-def monopole_coeffs(aa, nside, bl, freq):
+def monopole_coeffs(aa, nside, bl, freq, txyz):
     # does this need to have absorber abilities?
     # I bet it does
     I_sky = makeFlatMap(nside=nside, freq=freq, Tsky=1.)
-    txyz = I_sky.px2crd(np.arange(I_sky.npix()))
     coefficient = calcVis(aa=aa, sky=I_sky, txyz = txyz, nside=nside, bl=bl, freq=freq, smooth=0.01, theta_cutoff=np.pi/4, abs_file = False, flat=0., make_plot=False)
     return coefficient
 
@@ -96,7 +98,7 @@ if __name__ == '__main__':
     o.add_option('--calfile', default='hyperion_deployment_aug2017')
     o.add_option('--absfile', default='DIP_S11_LIDON_FER_DB.csv')
     o.add_option('--sim_dir', default='/home/kara/capo/kmk/scripts/')
-    o.add_option('--smooth', default=0.1)
+    o.add_option('--smooth', default=0.01)
     o.add_option('--gsm_dir', default='/home/kara/capo/kmk/gsm/gsm_raw/')
 
     #o.add_option('--fileout', default='sim_results.uv')
@@ -116,9 +118,10 @@ if __name__ == '__main__':
         
     aa = a.cal.get_aa(calfile, freqs)
     jd_init = 2458080
-    jds = np.linspace(jd_init, jd_init + 0.15, 4)
+    jds = np.linspace(jd_init, jd_init + 1, 10)
+    #jds = np.array([jd_init])
 
-    N = 32
+    N = 64
 
     # number of baselines in sim, in array form
     ij = np.arange(0,7,1)
@@ -126,8 +129,8 @@ if __name__ == '__main__':
     B = 1e9*(np.max(freqs)-np.min(freqs))/len(freqs) # channel bandwidth in Hz
     int_time = 10 # integration time in seconds
     T_sys = 300 # K, room temperature system
-    #T_rms = T_sys / np.sqrt(B*int_time)
-    T_rms = 0.
+    T_rms = T_sys / np.sqrt(B*int_time)
+    T_rms = 1.
 
     sim_data = []
     vis_data = np.zeros(len(freqs), dtype=complex)
@@ -140,6 +143,7 @@ if __name__ == '__main__':
     for i in xrange(len(ij)):
         bl = (0, ij[i])
         for j in xrange(len(freqs)):
+            vis_sum_time = 0
             # make sky with point source at zenith in equatorial coordinates
             aa.set_jultime(jds[0])
             flatMap = makeFlatMap(nside=N, freq=freqs[j], Tsky=1.)
@@ -152,15 +156,19 @@ if __name__ == '__main__':
                 aa.set_jultime(jds[k])
                 eq2top = aa.eq2top_m
                 txyz = tx,ty,tz = np.dot(eq2top, exyz)
-                cal_coeffs = monopole_coeffs(aa=aa, nside=N, bl=bl, freq=freqs[j])
-                obs_vis = calcVis(aa=aa, sky=I_sky_eq, txyz = txyz, nside=N, bl=bl, freq=freqs[j], smooth=smooth, theta_cutoff=np.pi/4, abs_file = False, flat=0., make_plot=True)
-                noise_amp = 1e23 * 2*a.const.k*T_rms / (wvlens[j]**2) # convert thermal noise level to Janskys
+                cal_coeffs = monopole_coeffs(aa=aa, nside=N, bl=bl, freq=freqs[j], txyz = txyz)
+                obs_vis = calcVis(aa=aa, sky=I_sky_eq, txyz = txyz, nside=N, bl=bl, freq=freqs[j], smooth=smooth, theta_cutoff=np.pi/4, abs_file = False, flat=0., make_plot=False)
+                noise_amp = T_rms # convert thermal noise level to Janskys
                 #obs_vis += noise(shape=obs_vis.size, scale=noise_amp)
                 #obs_vis = calcVis(aa=aa, sky=I_sky, nside=N, bl=bl, freq=freqs[j], smooth=smooth, theta_cutoff=np.pi/4, abs_file = absfile, flat=0, make_plot=False)
-                weight = (np.abs(cal_coeffs) / noise_amp)**2
-                temp_sum.append(weight * obs_vis / cal_coeffs)
-                temp_wgt.append(weight)
-            vis_data[j] = obs_vis
+                vis_sum_time += obs_vis / cal_coeffs
+            # average visibilities over time to smear out source effects
+            avg_vis = vis_sum_time / len(jds)
+            weight = (np.abs(cal_coeffs) / noise_amp)**2
+            # no noise for now
+            temp_sum.append(weight * avg_vis)
+            temp_wgt.append(weight)
+            vis_data[j] = avg_vis
         bx,by,bz = bxyz = aa.get_baseline(*bl, src='z')
         uv = np.sqrt(bx**2 + by**2 + bz**2) / wvlens
         pl.plot(freqs, np.abs(vis_data), label="Baseline %d" % i) 
@@ -175,16 +183,14 @@ if __name__ == '__main__':
 
     temp_sum = np.array(temp_sum)
     temp_wgt = np.array(temp_wgt)
-    #temp = np.array(temp)
 
     temp_sum.shape = (-1,50)
     temp_wgt.shape = (-1,50)
-    #temp.shape = (-1, 50)
 
     # solve for the observed temperature using inverse variance weighting
     temp = np.sum(temp_sum,axis=0)/np.sum(temp_wgt,axis=0)
     temp_rms = 1./np.sqrt(np.sum(temp_wgt,axis=0)) #rms noise of inverse variance weighted values 
-    #temp_rms_gen = np.sqrt(np.sum(temp_wgt**2,axis=0))/np.sqrt(np.sum(temp_wgt,axis=0)) #rms noise of inverse variance weighted values 
+    temp_rms = np.zeros(temp_rms.shape)
     print temp
     #print np.mean(temp), np.mean(temp_rms)
 
