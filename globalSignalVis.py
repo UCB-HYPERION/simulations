@@ -209,9 +209,14 @@ if __name__ == '__main__':
     T_rms = 1.
     
     uv = init_uv(filename=fileout, aa=aa, freqs=freqs, inttime=int_time, sys_opts=sys_opts)
+    cal_uv = init_uv(filename='coefficients.uv', aa=aa, freqs=freqs, inttime=int_time, sys_opts=sys_opts)
+
+    print uv.vars()
+    print uv['nchan']
 
     sim_data = []
     spec = np.zeros(len(freqs), dtype=complex)
+    cal_spec = np.zeros(len(freqs), dtype=complex)
     temp_sum = []
     temp_wgt = []
     temp = []
@@ -231,9 +236,15 @@ if __name__ == '__main__':
         uv['pol'] = a.miriad.str2pol['xx'] # not dealing with polarization in this sim, so set them all to same value
         crd = aa.get_baseline(0, ij[i])
         preamble = (crd, jd_init, bl)
+        cal_uv['lst'] = aa.sidereal_time()
+        cal_uv['ra'] = aa.sidereal_time()
+        cal_uv['obsra'] = aa.sidereal_time()
+        cal_uv['pol'] = a.miriad.str2pol['xx'] # not dealing with polarization in this sim, so set them all to same value
+        cal_crd = aa.get_baseline(0, ij[i])
+        cal_preamble = (crd, jd_init, bl)
         for j in xrange(len(freqs)):
             vis_sum_time = 0
-            flatMap = makeFlatMap(nside=N, freq=freqs[j], file_path=file_path, Tsky=1.)
+            flatMap = makeFlatMap(nside=N, freq=freqs[j], file_path=file_path, Tsky=T_gs[j])
             #point_source_loc = np.array([np.cos(aa.lat)*np.cos(aa.sidereal_time()), np.cos(aa.lat)*np.sin(aa.sidereal_time()), np.sin(aa.lat)])
             #pointMap = makePointSourceMap(nside=N, xyz=point_source_loc, file_path=file_path, freq = freqs[j], Tsource=100.)
             #I_sky_eq.map = flatMap.map + pointMap.map
@@ -258,18 +269,22 @@ if __name__ == '__main__':
             temp_sum.append(weight * avg_vis / cal_coeffs)
             temp_wgt.append(weight)
             spec[j] = avg_vis
+            cal_spec[j] = cal_coeffs
         uv.write(preamble, data=spec, flags = np.zeros(len(freqs)))
+        cal_uv.write(preamble, data=cal_spec, flags = np.zeros(len(freqs)))
         bx,by,bz = bxyz = aa.get_baseline(*bl, src='z')
         uv_crds = np.sqrt(bx**2 + by**2 + bz**2) / wvlens
         if plot_uv == True:
             pl.plot(uv_crds, np.abs(spec), label="Baseline %d" % i) 
         else:
             pl.plot(freqs, np.abs(spec), label=uv_sep[i]) 
+    del(uv)
+    del(cal_uv)
 
     #pl.suptitle(r"\huge{Monopole Sky without Absorber, Flat Brightness}") 
     pl.suptitle(r"\huge{Monopole Sky with Ferrite Absorber, Flat Brightness}") 
     #pl.title(r"\LARGE{Absorber Smoothing Factor %f}" % smooth) 
-    if uv == True:
+    if plot_uv == True:
         pl.xlabel(r"\Large{uv-plane Baseline Separation}")
     else:
         pl.xlabel(r"\Large{Frequency (GHz)}")
@@ -289,7 +304,13 @@ if __name__ == '__main__':
     print temp
     #print np.mean(temp), np.mean(temp_rms)
 
-
+    pl.figure(1)
+    uv_data = a.miriad.UV(fileout)
+    for i in xrange(len(ij)):
+        preamble,uv_spec,flags = uv_data.read(raw=True)
+        bl = preamble[2]
+        pl.plot(freqs, np.abs(uv_spec),label="Baseline %d" % bl[1])
+    pl.show()
     #pl.figure(1)
     #pl.plot(freqs, temp, label="Measured Temperature")
     #pl.plot(freqs, temp_rms)
