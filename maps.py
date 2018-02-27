@@ -7,7 +7,7 @@ from GlobalSkyModel import GlobalSkyModel
 class HealpixMapMF(object):
     """Collection of utilities for mapping data on a sphere. Adds multi-frequency functionality to the data map infrastructure of aipy.healpix.HealpixMap"""
     def __init__(self, freqs, nside, filepath):
-        self.freqs = freqs
+        self.freqs = list(freqs)
         self.nside = nside
         self.filepath = filepath
         maps = []
@@ -42,9 +42,9 @@ class FlatMap(HealpixMapMF):
         with brightness temperature Tsky, in Kelvin """
     def __init__(self, freqs, nside, filepath, Tsky=1.):
         super(FlatMap, self).__init__(freqs, nside, filepath)
-        dirname = "%sflat_map_%dK_%d-%dMHz_%d" % (self.filepath, Tsky, 1e3*self.freqs.min(), 1e3*self.freqs.max(), len(self.freqs))
+        dirname = "%sflat_map_%dK_%d-%dMHz_%d/" % (self.filepath, Tsky, 1e3*min(self.freqs), 1e3*max(self.freqs), len(self.freqs))
         if os.path.isdir(dirname):
-            self.maps = self.read_maps(dirname)
+            self.read_maps(dirname)
         else:
             for f,m in self:
                 m.map = Tsky*np.ones(shape=m.map.shape)
@@ -55,12 +55,13 @@ class GlobalSignalMap(HealpixMapMF):
         with brightness temperature of predicted hydrogen global signal, in Kelvin """
     def __init__(self, freqs, nside, filepath, Tgs):
         super(GlobalSignalMap, self).__init__(freqs, nside, filepath)
-        dirname = "%sglobal_signal_map_%d-%dMHz_%d" % (self.filepath, 1e3*self.freqs.min(), 1e3*self.freqs.max(), len(self.freqs))
+        dirname = "%sglobal_signal_map_%d-%dMHz_%d/" % (self.filepath, 1e3*min(self.freqs), 1e3*max(self.freqs), len(self.freqs))
         if os.path.isdir(dirname):
-            self.maps = self.read_maps(dirname)
+            self.read_maps(dirname)
         else:
             for f,m in self:
-                m.map = Tgs[f]*np.ones(shape=m.map.shape)
+                index = self.freqs.index(f)
+                m.map = Tgs[index]*np.ones(shape=m.map.shape)
             self.save_maps(dirname)
 
 class SynchrotronMap(HealpixMapMF):
@@ -68,9 +69,9 @@ class SynchrotronMap(HealpixMapMF):
         emission, in Kelvin """
     def __init__(self, freqs, nside, filepath):
         super(SynchrotronMap, self).__init__(freqs, nside, filepath)
-        dirname = "%ssynch_map_%d-%dMHz_%d" % (self.filepath, 1e3*self.freqs.min(), 1e3*self.freqs.max(), len(self.freqs))
+        dirname = "%ssynch_map_%d-%dMHz_%d/" % (self.filepath, 1e3*min(self.freqs), 1e3*max(self.freqs), len(self.freqs))
         if os.path.isdir(dirname):
-            self.maps = self.read_maps(dirname)
+            self.read_maps(dirname)
         else:
             for f,m in self:
                 Tsky = 237 * (f/0.150)**-2.5
@@ -83,9 +84,9 @@ class PointMap(HealpixMapMF):
     def __init__(self, freqs, nside, filepath, xyz, Tsource=1.):
         super(PointMap, self).__init__(freqs, nside, filepath)
         # include coordinates in dirname?
-        dirname = "%spoint_map_%dK_%d-%dMHz_%d" % (self.filepath, Tsky, 1e3*self.freqs.min(), 1e3*self.freqs.max(), len(self.freqs))
+        dirname = "%spoint_map_%dK_%d-%dMHz_%d/" % (self.filepath, Tsky, 1e3*min(self.freqs), 1e3*max(self.freqs), len(self.freqs))
         if os.path.isdir(dirname):
-            self.maps = self.read_maps(dirname)
+            self.read_maps(dirname)
         else:
             for f,m in self:
                 x,y,z = xyz
@@ -96,9 +97,9 @@ class GSMMap(HealpixMapMF):
     """ make multi-frequency sky map with Global Sky Model, in Kelvin """
     def __init__(self, freqs, nside, filepath, path='/home/kara/capo/kmk/gsm/gsm_raw/', Tsky=1.):
         super(GSMMap, self).__init__(freqs, nside, filepath)
-        dirname = "%sgsm_map_%d-%dMHz_%d" % (self.filepath, 1e3*self.freqs.min(), 1e3*self.freqs.max(), len(self.freqs))
+        dirname = "%sgsm_map_%d-%dMHz_%d/" % (self.filepath, 1e3*self.freqs.min(), 1e3*self.freqs.max(), len(self.freqs))
         if os.path.isdir(dirname):
-            self.maps = self.read_maps(dirname)
+            self.read_maps(dirname)
         else:
             g = a.healpix.HealPix(nside=512)
             for f,m in self:

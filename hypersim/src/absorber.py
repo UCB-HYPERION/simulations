@@ -26,14 +26,16 @@ class Absorber:
                 attens.append(float(row[1])) # values are negative
             func = interpolate.interp1d(freqs, attens)
             return func
-    def abs_response(self, xyz, freq, smooth, data_file, flat):
+    def abs_response(self, xyz, freq, smooth, absorber):
         theta = np.arccos(xyz[2])
         s = 0.5 + 0.5*np.tanh((theta-(np.pi/2 - self.horizon_angle))/smooth)
-        if bool(data_file) == True:
-            atten = self.freq_atten(data_file)
-            dB = atten(freq)
+        if bool(absorber) == True:
+            try: dB = float(absorber)
+            except ValueError:
+                atten = self.freq_atten(absorber)
+                dB = atten(freq)
         else:
-            dB = flat
+            dB = 0.0
         print "dB = %f" % dB
         return s * 10**(dB/20.) + (1-s)*1.
 
@@ -41,9 +43,9 @@ class BeamAbsorber(BeamDipole,Absorber):
     def __init__(self, freqs, horizon_angle):
         BeamDipole.__init__(self, freqs)
         Absorber.__init__(self, horizon_angle)
-    def response(self, xyz, smooth, data_file, flat, use_abs=True):
+    def response(self, xyz, smooth, absorber, use_abs=True):
         resp = self.beam_response(xyz)
-        if use_abs: resp *= self.abs_response(xyz, self.freqs, smooth, data_file, flat)
+        if use_abs: resp *= self.abs_response(xyz, self.freqs, smooth, absorber)
         return resp
     def auto_noise(self, Tabs, nside=64):
         h = aipy.healpix.HealpixBase(nside=nside)
