@@ -1,0 +1,11 @@
+# generated data (e.g. simulated sky maps and visibility spectra
+*.uv
+*.fits
+maps/
+
+# home-brew concept scripts used to work out ideas
+globalSkyModelRot.py
+
+# ignore intermediate files (e.g. .swp and .pyc)
+*.pyc
+*.swp
